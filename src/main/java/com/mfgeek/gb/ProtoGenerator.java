@@ -14,13 +14,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class ProtoGenerator {
-	private static ProtoGenerator instance = null;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-	public static ProtoGenerator newInstance() {
-		if (instance == null) {
-			instance = new ProtoGenerator();
-		}
+public class ProtoGenerator {
+
+	private static final Logger		LOGGER		= LoggerFactory.getLogger(ProtoGenerator.class);
+
+	private static ProtoGenerator	instance	= new ProtoGenerator();
+
+	public static ProtoGenerator getInstance() {
 		return instance;
 	}
 
@@ -29,58 +32,59 @@ public class ProtoGenerator {
 		map.put("int", "int32");
 		map.put("integer", "int32");
 		map.put("short", "int32");
-		map.put("long", "int64");// need to manually convert from pojo date value to long value
+		map.put("long", "int64");	// need to manually convert from pojo date value to long value
 		map.put("string", "string");
 		map.put("float", "float");
 		map.put("double", "double");
-		map.put("date", "int64");// convert date value to int64/long TODO
+		map.put("date", "int64");	// convert date value to int64/long TODO
 		map.put("boolean", "bool");
 		map.put("byte", "int32");
-		// TODO add Collection support here
 	}
 
-	public List<ProtoFile> parse(String dir, String pack, String opackageName) {
-		System.out.println("parsing java classes in package:" + dir);
+	public List<ProtoFile> parse(String pSource, String pPackage, String pProtoPackageName, String pJavaPackageName, String pSyntax) {
+		LOGGER.info("parsing java classes in package:" + pSource);
 
 		List<String> ignores = getIgnores();
 
-		List<ProtoFile> protos = new ArrayList<ProtoFile>();
-		File f = new File(dir, packToDir(pack));
+		List<ProtoFile> protos = new ArrayList<>();
+		File f = new File(pSource, packToDir(pPackage));
 		if (f.exists() && f.isDirectory() && f.list().length > 0) {
 			List<String> javaFiles = Arrays.asList(f.list());
-			System.out.println("found " + javaFiles.size() + " java classes in package ");
+			LOGGER.info("found " + javaFiles.size() + " java classes in package");
+
 			for (String j : javaFiles) {
-				System.out.print("processing class " + j);
+				String msg = "processing class " + j;
+
 				// skip **Example.java classes
 				if (j.endsWith("Example.java")) {
-					System.out.println(" -- skipped **Example.java class");
+					LOGGER.info(msg + " -- skipped **Example.java class");
 					continue;
 				}
 
 				if (ignores.contains(j.substring(0, j.indexOf(".java")))) {
-					System.out.println(" -- skipped ignored files defined in ignore.txt");
+					LOGGER.info(msg + " -- skipped ignored files defined in ignore.txt");
 					continue;
 				}
-				System.out.println(j);
+
+				LOGGER.info(msg);
 				Class<?> c;
 				try {
-					c = Class.forName(pack + "." + j.substring(0, j.indexOf(".")));
+					c = Class.forName(pPackage + "." + j.substring(0, j.indexOf(".")));
 
 					String name = c.getSimpleName();
 					String packageName = c.getPackage().getName();
 
 					ProtoFile pf = new ProtoFile();
-					pf.setSyntax("proto2");
+					pf.setSyntax(pSyntax);
 					if (c.isEnum()) {
 						pf.setEnum(true);
 						pf.setJavaOuterClassName(name + "Enum");
-						// pf.setJavaOuterClassName('E' + name);
 					} else {
 						pf.setJavaOuterClassName(name + "Obj");
 					}
-					pf.setJavaPackage(packageName);
+					pf.setJavaPackage(pJavaPackageName != null && !pJavaPackageName.isEmpty() ? pJavaPackageName : packageName);
 					pf.setName(name);
-					pf.setPackageName(opackageName);
+					pf.setPackageName(pProtoPackageName);
 
 					for (Field field : c.getDeclaredFields()) {
 						manageField(javaFiles, pf, field);
@@ -114,7 +118,6 @@ public class ProtoGenerator {
 		if (field.getName().equals("serialVersionUID")) {
 			return;
 		}
-		// System.out.println("add field in " + j + ":" + field.getName());
 		Class<?> type = field.getType();
 		checkCustomType(javaFiles, pf, type);
 		if (checkType(type)) {
@@ -124,7 +127,7 @@ public class ProtoGenerator {
 			checkCustomType(javaFiles, pf, parameterizedType);
 			pf.appendField(false, true, getProtoType(parameterizedType), field.getName(), null);
 		} else {
-			System.out.println("WARNING: failed to handle field [" + field.getName() + "] with type [" + type + "]. Skipped.");
+			LOGGER.info("WARNING: failed to handle field [" + field.getName() + "] with type [" + type + "]. Skipped.");
 		}
 	}
 
@@ -145,9 +148,6 @@ public class ProtoGenerator {
 		String t = pClass.getSimpleName();
 		if (javaFiles.contains(t + ".java")) {
 			String type = t.toLowerCase();
-			// if (pClass.isEnum() && t.startsWith("E")) {
-			// t = t.substring(1);
-			// }
 			pf.appendImport(t + ".proto");
 			if (!map.containsKey(type)) {
 				map.put(type, t);
@@ -169,7 +169,7 @@ public class ProtoGenerator {
 				isr.close();
 				is.close();
 			} else {
-				System.out.println("ignore.txt not found");
+				LOGGER.info("ignore.txt not found");
 			}
 
 		} catch (IOException e) {

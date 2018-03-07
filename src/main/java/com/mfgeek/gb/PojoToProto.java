@@ -3,114 +3,167 @@ package com.mfgeek.gb;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
-import org.apache.commons.cli.PosixParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.mfgeek.gb.utils.CollectionMapUtils;
+import com.mfgeek.gb.utils.StringUtils;
 
 public class PojoToProto {
-	private static String	inputUsage		= "root directory of the source code";
-	private static String	packageUsage	= "specify the package name of the class ";
-	private static String	outputUsage		= "generated proto file output directory.";
-	private static String	opackageUsage	= "specify the output package name of the proto";
-	private static String	usage					= "usage: pojo2proto" + "\n\t-i <dir>     " + inputUsage + "\n\t-p <package>     " + packageUsage
-			+ "\n\t-o <dir>     " + outputUsage + "\n\t-P <package>     " + opackageUsage + "\n";
-	List<String>					javaFiles			= new ArrayList<String>();
 
-	static String					input					= "src/main/resources/";
-	static String					output				= "generated-proto";
-	private static String	packageName		= "com.mfgeek.gb.pojo";
-	private static String	opackageName	= "com.mfgeek.gb.proto";
+	private static final Logger	LOGGER	= LoggerFactory.getLogger(PojoToProto.class);
+
+	private static String				source;
+	private static String				target;
+	private static String				packageName;
+	private static String				javaPackageName;
+	private static String				protoPackageName;
+	private static String				syntax;
+
+	private static Options			options;
+
+	static {
+		syntax = "proto2";
+
+		// create Options object
+		options = new Options();
+
+		// add required options
+		options.addRequiredOption("i", "input", true, "root directory of the POJO source code");
+		options.addRequiredOption("p", "package", true, "specify the package name of the POJO source class");
+		options.addRequiredOption("o", "proto-package", true, "specify the package name of the proto file");
+
+		// add options
+		options.addOption("h", "help", false, "print help");
+		options.addOption("j", "java-package", true, "specify the package name of the generated proto class");
+		options.addOption("s", "syntax", true, "protocol buffer syntax (\"proto2\" by default)");
+		options.addOption("g", "generated-output", true, "generated proto file output directory");
+
+	}
 
 	/**
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		// create the command line parser
-		CommandLineParser parser = new PosixParser();
 
-		// create the Options
-		Options options = new Options();
-		options.addOption("i", "input", true, inputUsage);
-		options.addOption("p", "package", true, packageUsage);
-		options.addOption("o", "output", true, outputUsage);
-		options.addOption("P", "out-package", true, opackageUsage);
-		try {
-			// parse the command line arguments
-			CommandLine line = parser.parse(options, args);
-			List<ProtoFile> protoFiles = null;
-			if (!line.hasOption("i") || !line.hasOption("o") || !line.hasOption("p")) {
-				usage();
-			}
-			if (line.hasOption("i") && line.hasOption("p")) {
-				input = line.getOptionValue("i");
-				packageName = line.getOptionValue("p");
-				opackageName = line.getOptionValue("P");
-				if (input != null && !input.trim().equals("")) {
-					protoFiles = ProtoGenerator.newInstance().parse(input, packageName, opackageName);
-				} else {
-					usage();
-				}
-			}
-			if (line.hasOption("o")) {
-				output = line.getOptionValue("o");
+		manageCommandLine(args);
+		List<ProtoFile> protoFiles = ProtoGenerator.getInstance().parse(source, packageName, protoPackageName, javaPackageName, syntax);
 
-				if (protoFiles != null && protoFiles.size() > 0) {
-					for (ProtoFile pf : protoFiles) {
-						writeTo(output, pf);
-					}
-				}
+		if (StringUtils.isNotEmpty(target) && CollectionMapUtils.isNotEmptyOrNull(protoFiles)) {
+			File out = new File(target);
+			if (out.exists() && !out.delete()) {
+				LOGGER.info(target + " exist, but cannot be deleted!");
 			}
-		} catch (ParseException exp) {
-			usage();
-
-			exp.printStackTrace();
+			for (ProtoFile pf : protoFiles) {
+				writeTo(target, pf);
+			}
 		}
 
 	}
 
+	/**
+	 * @param args command line arguments
+	 */
+	private static void manageCommandLine(String[] args) {
+		CommandLineParser parser = new DefaultParser();
+		try {
+			CommandLine cmd = parser.parse(options, args);
+			if (cmd.hasOption("h")) {
+				printHelp();
+			}
+			if (cmd.hasOption("i")) {
+				source = cmd.getOptionValue("i");
+			}
+			if (cmd.hasOption("p")) {
+				packageName = cmd.getOptionValue("p");
+			}
+			if (cmd.hasOption("j")) {
+				javaPackageName = cmd.getOptionValue("j");
+			}
+			if (cmd.hasOption("g")) {
+				target = cmd.getOptionValue("g");
+			}
+			if (cmd.hasOption("o")) {
+				protoPackageName = cmd.getOptionValue("o");
+			}
+			if (cmd.hasOption("s")) {
+				syntax = ESyntax.enumOf(cmd.getOptionValue("s")).name();
+			}
+			if (StringUtils.isEmptyOrNull(source) || StringUtils.isEmptyOrNull(packageName) || StringUtils.isEmptyOrNull(protoPackageName)) {
+				printHelp();
+			}
+		} catch (ParseException e) {
+			printHelp();
+		}
+	}
+
+	/**
+	 *
+	 */
+	private static void printHelp() {
+		// automatically generate the help statement
+		HelpFormatter formatter = new HelpFormatter();
+		formatter.printHelp(PojoToProto.class.getSimpleName(), options);
+		System.exit(1);
+	}
+
 	private static void writeTo(String dir, ProtoFile pf) {
-		File out = new File(output);
+		File out = new File(dir);
 		if (!out.exists()) {
-			System.out.println(dir + " doesn't exist, will create a new directory with name:[" + dir + "]");
-			out = new File(output);
+			LOGGER.info(dir + " doesn't exist, will create a new directory with name:[" + dir + "]");
 			out.mkdirs();
 		}
 
 		if (out.exists() && out.isFile()) {
-			String dirName = out.exists() ? output : (output + ".2");
-			System.out.println(dir + " is a file, create another directory with name:[" + dir + ".2]");
+			String dirName = out.exists() ? dir : (dir + ".2");
+			LOGGER.info(dir + " is a file, create another directory with name:[" + dir + ".2]");
 			out = new File(dirName);
 			out.mkdirs();
 		}
 		FileWriter writer = null;
+		String name = out.getAbsolutePath() + "/" + pf.getName() + ".proto";
 		try {
-			String name = out.getAbsolutePath() + "/" + pf.getName() + ".proto";
-			System.out.println("writing proto file: " + name);
+			LOGGER.info("writing proto file: " + name);
 			writer = new FileWriter(name, false);
 			writer.write(pf.toString());
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			LOGGER.error("Unable to write " + name, e);
 		} finally {
 			if (writer != null) {
 				try {
 					writer.close();
 				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
+					LOGGER.error("Unable to close writer", e);
 				}
 			}
 		}
 
 	}
 
-	private static void usage() {
-		System.err.println(usage);
+	enum ESyntax {
+
+		proto2, //
+		proto3; //
+
+		public static final ESyntax enumOf(String pValue) {
+			if (StringUtils.isNotEmptyOrNull(pValue)) {
+				for (ESyntax type : values()) {
+					if (pValue.equals(type.name())) {
+						return type;
+					}
+				}
+			}
+			return proto2;
+		}
+
 	}
 
 }

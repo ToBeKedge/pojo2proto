@@ -3,8 +3,15 @@ package com.mfgeek.gb;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.mfgeek.gb.PojoToProto.ESyntax;
+
+import lombok.Data;
+
+@Data
 public class ProtoFile {
+
 	private static final String			INDENT							= "\t";
+
 	private String									syntax;
 	private String									name;
 	private boolean									isEnum							= false;
@@ -16,14 +23,6 @@ public class ProtoFile {
 	private final List<String>			imports							= new ArrayList<>();
 	private final List<ProtoField>	fields							= new ArrayList<>();
 
-	public String getSyntax() {
-		return this.syntax;
-	}
-
-	public void setSyntax(String syntax) {
-		this.syntax = syntax;
-	}
-
 	public void appendImport(String pImport) {
 		this.imports.add(pImport);
 	}
@@ -34,46 +33,6 @@ public class ProtoFile {
 
 	public void appendField(boolean required, boolean repeated, String type, String name, String def) {
 		this.fields.add(new ProtoField(required, repeated, type, name, def, this.index++));
-	}
-
-	public String getName() {
-		return this.name;
-	}
-
-	public void setName(String name) {
-		this.name = name;
-	}
-
-	public boolean isEnum() {
-		return this.isEnum;
-	}
-
-	public void setEnum(boolean pIsEnum) {
-		this.isEnum = pIsEnum;
-	}
-
-	public String getJavaOuterClassName() {
-		return this.javaOuterClassName;
-	}
-
-	public void setJavaOuterClassName(String javaOuterClassName) {
-		this.javaOuterClassName = javaOuterClassName;
-	}
-
-	public String getJavaPackage() {
-		return this.javaPackage;
-	}
-
-	public void setJavaPackage(String javaPackage) {
-		this.javaPackage = javaPackage;
-	}
-
-	public String getPackageName() {
-		return this.packageName;
-	}
-
-	public void setPackageName(String packageName) {
-		this.packageName = packageName;
 	}
 
 	@Override
@@ -106,7 +65,7 @@ public class ProtoFile {
 			if (this.isEnum && "value".equals(f.name)) {
 				continue;
 			}
-			appendLine(buf, INDENT + f.toString(this.isEnum));
+			appendLine(buf, INDENT + f.toString(this.syntax, this.isEnum));
 			appendNewLine(buf);
 		}
 		appendClosedQuote(buf);
@@ -129,7 +88,9 @@ public class ProtoFile {
 		buf.append("}\n");
 	}
 
-	class ProtoField {
+	@Data
+	static class ProtoField {
+
 		boolean								repeated	= false;
 		boolean								required	= false;
 		private final String	type;
@@ -148,15 +109,25 @@ public class ProtoFile {
 
 		@Override
 		public String toString() {
-			return toString(false);
+			return toString(ESyntax.proto2.name(), false);
 		}
 
-		public String toString(boolean isFieldForEnum) {
+		public String toString(String syntax, boolean isFieldForEnum) {
 			if (isFieldForEnum) {
 				return this.name + " = " + (this.index - 1);
 			} else {
-				return (this.repeated ? "repeated" : (this.required ? "required" : "optional")) + " " + this.type + " " + this.name + " = "
-						+ this.index + " " + (this.defaultValue == null ? "" : ("[ " + this.defaultValue + " ]"));
+				String prefix = "";
+				if (this.repeated) {
+					prefix = "repeated ";
+				} else if (ESyntax.enumOf(syntax) == ESyntax.proto2) {
+					if (this.required) {
+						prefix = "required ";
+					} else {
+						prefix = "optional ";
+					}
+				}
+				return prefix + this.type + " " + this.name + " = " + this.index + " "
+						+ (this.defaultValue == null || ESyntax.enumOf(syntax) == ESyntax.proto3 ? "" : ("[ " + this.defaultValue + " ]"));
 			}
 		}
 	}
